@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Gravar tela
+GenericName=Gravação de tela
+Comment=TUI para o grava-tela (gpu-screen-recorder)
+Exec=kitty --class gravatui -T "Gravar tela" -o initial_window_width=48c -o initial_window_height=20c -o remember_window_size=no @REPO@/gravatui.py
+Icon=media-record
+Terminal=false
+Categories=AudioVideo;Utility;
+Keywords=gravar;tela;screen;record;screencast;video;
+StartupWMClass=gravatui

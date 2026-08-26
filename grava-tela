@@ -1,0 +1,91 @@
+#!/bin/bash
+# grava-tela — toggle de gravação de tela no niri usando gpu-screen-recorder (AMD)
+# Uso:
+#   grava-tela                      # grava o monitor focado (toggle: 2a chamada para)
+#   grava-tela --region            # seleciona uma região com slurp (precisa de slurp)
+#   grava-tela --audio             # inclui áudio do desktop (default_output)
+#   grava-tela --mic               # inclui microfone (default_input)
+#   grava-tela --stop              # apenas para (não inicia)
+# Combine à vontade: grava-tela --region --audio --mic
+
+set -euo pipefail
+
+[[ -f ~/.config/user-dirs.dirs ]] && source ~/.config/user-dirs.dirs
+OUT_DIR="${XDG_VIDEOS_DIR:-$HOME/Vídeos}"
+PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/grava-tela.pid"
+NAMEFILE="${XDG_RUNTIME_DIR:-/tmp}/grava-tela.filename"
+
+REGION=false AUDIO=false MIC=false STOP=false
+for a in "$@"; do
+  case "$a" in
+    --region) REGION=true ;;
+    --audio)  AUDIO=true ;;
+    --mic)    MIC=true ;;
+    --stop)   STOP=true ;;
+    *) echo "opção desconhecida: $a" >&2; exit 2 ;;
+  esac
+done
+
+is_running() { pgrep -f '^gpu-screen-recorder' >/dev/null; }
+
+stop_rec() {
+  pkill -SIGINT -f '^gpu-screen-recorder' 2>/dev/null || true   # SIGINT salva o arquivo direito
+  local n=0
+  while pgrep -f '^gpu-screen-recorder' >/dev/null && (( n < 50 )); do sleep 0.1; ((n++)); done
+  pkill -9 -f '^gpu-screen-recorder' 2>/dev/null || true
+
+  local file preview
+  file=$(cat "$NAMEFILE" 2>/dev/null || true)
+  rm -f "$PIDFILE" "$NAMEFILE"
+  [[ -f "$file" ]] || { notify-send "Gravação encerrada" "Arquivo não encontrado"; exit 0; }
+
+  preview="${file%.mp4}-preview.png"
+  ffmpeg -y -i "$file" -ss 00:00:00.1 -vframes 1 -q:v 2 "$preview" -loglevel quiet 2>/dev/null || preview="$file"
+  notify-send -t 10000 -i "$preview" "Gravação salva" "$(basename "$file")"
+  ( sleep 3; rm -f "${file%.mp4}-preview.png" ) &
+  echo "$file"
+}
+
+# Toggle: se já está gravando, para.
+if is_running; then stop_rec; exit 0; fi
+$STOP && exit 0
+
+[[ -d "$OUT_DIR" ]] || mkdir -p "$OUT_DIR"
+
+# Alvo de captura
+if $REGION; then
+  command -v slurp >/dev/null || { notify-send -u critical "grava-tela" "slurp não instalado (sudo pacman -S slurp)"; exit 1; }
+  geom=$(slurp) || exit 1                       # "X,Y WxH"
+  read -r xy wh <<<"$geom"
+  W=${wh%x*}; H=${wh#*x}; X=${xy%,*}; Y=${xy#*,}
+  WINARGS=(-w region -region "${W}x${H}+${X}+${Y}")
+else
+  mon=$(niri msg --json focused-output 2>/dev/null | jq -r '.name' 2>/dev/null || true)
+  [[ -n "${mon:-}" && "$mon" != "null" ]] || mon=$(niri msg outputs 2>/dev/null | grep -oP '\(([A-Z]+-[0-9]+)\)' | head -1 | tr -d '()')
+  WINARGS=(-w "$mon")
+fi
+
+# Áudio
+AUDARGS=()
+dev=""
+$AUDIO && dev="default_output"
+$MIC && { [[ -n "$dev" ]] && dev+="|"; dev+="default_input"; }
+[[ -n "$dev" ]] && AUDARGS=(-a "$dev" -ac aac)
+
+file="$OUT_DIR/grav-$(date +'%Y-%m-%d_%H-%M-%S').mp4"
+echo "$file" > "$NAMEFILE"
+
+gpu-screen-recorder "${WINARGS[@]}" -k auto -f 60 -fm cfr -fallback-cpu-encoding yes \
+  -o "$file" "${AUDARGS[@]}" >/dev/null 2>&1 &
+echo $! > "$PIDFILE"
+
+# Espera o arquivo começar (confirma que o encoder subiu)
+n=0
+while kill -0 "$(cat "$PIDFILE")" 2>/dev/null && [[ ! -f "$file" ]] && (( n < 25 )); do sleep 0.2; ((n++)); done
+if kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+  notify-send -t 2000 "Gravando tela" "$([ $REGION = true ] && echo 'região' || echo "$mon") → $(basename "$file")"
+else
+  notify-send -u critical "grava-tela" "Falha ao iniciar a gravação"
+  rm -f "$PIDFILE" "$NAMEFILE"
+  exit 1
+fi
