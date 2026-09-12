@@ -24,7 +24,7 @@ Press it, recording starts. Press it again, it saves.
 │                                          │
 │  ~/Vídeos                                │
 │                                          │
-│   o  pasta    q  sair                    │
+│   o  pasta   q  sair   x  apagar         │
 ╰──────────────────────────────────────────╯
 ```
 
@@ -136,6 +136,7 @@ In the TUI:
 | `r` / `a` / `m` | toggle region / audio / microphone |
 | `space` | start or stop |
 | `o` | open the recordings folder |
+| `x` | delete the last video (asks for confirmation) |
 | `q` | quit (does not interrupt an ongoing recording) |
 
 All of this is also **clickable**.

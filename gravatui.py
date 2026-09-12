@@ -9,9 +9,11 @@
 #   espaço / enter   iniciar (ou parar, se já estiver gravando)
 #   s  parar
 #   o  abrir a pasta de gravações
+#   x  apagar o último vídeo (pede confirmação)
 #   q  sair (não interrompe uma gravação em andamento)
 
 import curses
+import glob
 import os
 import shutil
 import subprocess
@@ -48,6 +50,57 @@ def videos_dir():
         except OSError:
             pass
     return out or os.path.expanduser("~/Vídeos")
+
+
+# file managers we try, in order, before falling back to gio/xdg-open.
+# opening one of these directly is more reliable than xdg-open, whose
+# inode/directory handler can be misconfigured and open the wrong app.
+FILE_MANAGERS = ("nautilus", "dolphin", "nemo", "thunar", "pcmanfm-qt", "pcmanfm", "caja")
+
+
+def open_folder(path):
+    # detached (start_new_session): closing gravatui never SIGHUPs the file
+    # manager, so it keeps living after the TUI's terminal goes away.
+    opener = None
+    for fm in FILE_MANAGERS:
+        if shutil.which(fm):
+            opener = [fm, path]
+            break
+    if opener is None:
+        if shutil.which("gio"):
+            opener = ["gio", "open", path]
+        elif shutil.which("xdg-open"):
+            opener = ["xdg-open", path]
+    if opener is None:
+        return False
+    subprocess.Popen(
+        opener,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return True
+
+
+def last_video(outdir):
+    # newest grav-*.mp4 by mtime; None if the folder has none yet.
+    vids = glob.glob(os.path.join(outdir, "grav-*.mp4"))
+    if not vids:
+        return None
+    return max(vids, key=os.path.getmtime)
+
+
+def delete_video(path):
+    # removes the .mp4 and its leftover -preview.png, if any. returns True on success.
+    try:
+        os.remove(path)
+    except OSError:
+        return False
+    preview = path[:-4] + "-preview.png" if path.endswith(".mp4") else path + "-preview.png"
+    try:
+        os.remove(preview)
+    except OSError:
+        pass
+    return True
 
 
 def is_recording():
@@ -90,6 +143,7 @@ class UI:
         self.mic = False
         self.msg = ""
         self.msg_until = 0.0
+        self.confirm_del = None   # path pending delete confirmation, or None
 
     def flash(self, text, secs=4):
         self.msg = text
@@ -166,6 +220,7 @@ def draw(stdscr, ui):
 
     while True:
         rec = is_recording()
+        lastvid = last_video(outdir)
         stdscr.erase()
         h, w = stdscr.getmaxyx()
 
@@ -233,13 +288,28 @@ def draw(stdscr, ui):
         gy = by + 13
         put(gy, ix, " o ", curses.A_REVERSE)
         put(gy, ix + 4, "pasta", C_DIM)
-        zone_pasta = (gy, ix, ix + 9, "open")
         put(gy, ix + 12, " q ", curses.A_REVERSE)
         put(gy, ix + 16, "sair", C_DIM)
-        zone_sair = (gy, ix + 12, ix + 20, "quit")
+        extra_zones = [(gy, ix, ix + 9, "open"), (gy, ix + 12, ix + 20, "quit")]
 
-        # ── mensagem efêmera ──
-        if ui.msg and time.time() < ui.msg_until:
+        # botão apagar: só fora de gravação e quando existe pelo menos um vídeo.
+        # escondido durante a confirmação (é o próprio alvo).
+        if not rec and lastvid and not ui.confirm_del:
+            put(gy, ix + 22, " x ", curses.A_REVERSE)
+            put(gy, ix + 26, "apagar", C_DIM)
+            extra_zones.append((gy, ix + 22, ix + 32, "del_ask"))
+
+        # ── confirmação de apagar / mensagem efêmera ──
+        if ui.confirm_del:
+            name = os.path.basename(ui.confirm_del)
+            put(by + 14, ix, ("Apagar " + name + "?")[:inner], C_REC)
+            put(by + 15, ix, " s ", curses.A_REVERSE)
+            put(by + 15, ix + 4, "sim", C_ON)
+            put(by + 15, ix + 10, " n ", curses.A_REVERSE)
+            put(by + 15, ix + 14, "não", C_DIM)
+            extra_zones.append((by + 15, ix, ix + 8, "del_yes"))
+            extra_zones.append((by + 15, ix + 10, ix + 18, "del_no"))
+        elif ui.msg and time.time() < ui.msg_until:
             put(by + 14, ix, ui.msg[:inner], C_MSG)
 
         stdscr.refresh()
@@ -262,7 +332,7 @@ def draw(stdscr, ui):
                 if x0 <= mx <= x1:
                     action = a
             if action is None:
-                for zy, x0, x1, a in (zone_pasta, zone_sair):
+                for zy, x0, x1, a in extra_zones:
                     if my == zy and x0 <= mx <= x1:
                         action = a
                         break
@@ -270,7 +340,13 @@ def draw(stdscr, ui):
                 continue
         else:
             k = chr(ch).lower() if 0 <= ch < 256 else ""
-            if k == "q":
+            if ui.confirm_del:
+                # em confirmação: s/y/enter = sim, n/q/esc = não, resto ignora
+                if k in ("s", "y") or ch in (curses.KEY_ENTER, 10, 13):
+                    action = "del_yes"
+                elif k in ("n", "q") or ch == 27:
+                    action = "del_no"
+            elif k == "q":
                 action = "quit"
             elif k == "r":
                 action = "region"
@@ -284,6 +360,12 @@ def draw(stdscr, ui):
                 action = "stop"
             elif k == "o":
                 action = "open"
+            elif k == "x":
+                action = "del_ask"
+
+        # durante confirmação, nada além de responder sim/não
+        if ui.confirm_del and action not in ("del_yes", "del_no"):
+            continue
 
         if action == "quit":
             return
@@ -303,11 +385,27 @@ def draw(stdscr, ui):
             else:
                 ui.flash("nada gravando")
         elif action == "open":
-            subprocess.Popen(
-                ["xdg-open", outdir],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-            ui.flash("abrindo pasta…")
+            if open_folder(outdir):
+                ui.flash("abrindo pasta…")
+            else:
+                ui.flash("nenhum gerenciador de arquivos encontrado")
+        elif action == "del_ask":
+            if rec:
+                ui.flash("pare a gravação antes de apagar")
+            elif lastvid:
+                ui.confirm_del = lastvid
+            else:
+                ui.flash("nenhum vídeo para apagar")
+        elif action == "del_yes":
+            target = ui.confirm_del
+            ui.confirm_del = None
+            if target and delete_video(target):
+                ui.flash(f"apagado: {os.path.basename(target)}")
+            else:
+                ui.flash("falha ao apagar")
+        elif action == "del_no":
+            ui.confirm_del = None
+            ui.flash("cancelado")
 
 
 def main():
