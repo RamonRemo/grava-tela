@@ -13,22 +13,23 @@ Press it, recording starts. Press it again, it saves.
 ```
 ╭─ grava-tela ─────────────────────────────╮
 │                                          │
-│  ○ Pronto para gravar                    │
+│  ○ Ready to record                       │
 │                                          │
-│  CAPTURAR                                │
-│   r   ○ região (senão, tela toda)        │
-│   a   ○ áudio do desktop                 │
-│   m   ○ microfone                        │
+│  CAPTURE                                 │
+│   r   ○ region (else full screen)        │
+│   a   ○ desktop audio                    │
+│   m   ○ microphone                       │
 │                                          │
-│  Iniciar gravação                 espaço │
+│  Start recording                   space │
 │                                          │
-│  ~/Vídeos                                │
+│  ~/Videos                                │
 │                                          │
-│   o  pasta   q  sair   x  apagar         │
+│   o  folder   q  quit   x  delete        │
 ╰──────────────────────────────────────────╯
 ```
 
-> The TUI ships in Portuguese; the box above mirrors its real output.
+> The interface language follows your system locale — Portuguese or English,
+> English by default. The box above mirrors its real output.
 
 ---
 
@@ -41,6 +42,12 @@ Press it, recording starts. Press it again, it saves.
   running, not some made-up state.
 - **Flexible targets** — the focused monitor or a mouse-selected region.
 - **Optional audio** — desktop, microphone, both, or none.
+- **Pick the output folder** — click the underlined path to choose another
+  directory (needs `zenity` or `kdialog`); recordings go there for the session.
+- **Delete the last video** — `x` (or the footer button) removes the newest clip
+  behind a confirmation prompt.
+- **Bilingual** — labels follow the system locale (`$LC_ALL`/`$LANG`): Portuguese
+  or English, English by default.
 - **Zero pip dependencies** — pure Python (stdlib only).
 
 ## 🧩 Anatomy
@@ -68,6 +75,7 @@ Press it, recording starts. Press it again, it saves.
 | `libnotify` (`notify-send`) | no start/stop notification. |
 | `niri` + `jq` | **focused-monitor** detection falls back to the first monitor. |
 | `kitty` | used by the `.desktop` launcher and the keybinding. |
+| `zenity` or `kdialog` | the folder picker (clicking the path) is disabled. |
 
 ### Installing the dependencies
 
@@ -126,6 +134,7 @@ grava-tui                              # opens the TUI
 
 grava-tela                             # records the focused monitor (toggle)
 grava-tela --region --audio --mic      # region + desktop + microphone
+grava-tela --outdir=/path/to/dir       # override the output folder
 grava-tela --stop                      # stop
 ```
 
@@ -139,7 +148,8 @@ In the TUI:
 | `x` | delete the last video (asks for confirmation) |
 | `q` | quit (does not interrupt an ongoing recording) |
 
-All of this is also **clickable**.
+Click the underlined **folder path** to pick a different output directory. All
+of this is also **clickable**.
 
 ## 🎯 Keybinding (niri)
 

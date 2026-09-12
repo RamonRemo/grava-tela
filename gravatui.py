@@ -11,6 +11,10 @@
 #   o  abrir a pasta de gravações
 #   x  apagar o último vídeo (pede confirmação)
 #   q  sair (não interrompe uma gravação em andamento)
+#
+# Clique no caminho da pasta (sublinhado) para escolher outro diretório de
+# saída (zenity/kdialog). O idioma (pt/en) vem do locale do sistema
+# ($LC_ALL/$LANG); qualquer coisa que não seja pt cai no inglês (default).
 
 import curses
 import glob
@@ -35,6 +39,89 @@ def _find_grava():
 
 
 GRAVA = _find_grava()
+
+
+def detect_lang():
+    # generic: honour the standard locale env (LC_ALL > LC_MESSAGES > LANG >
+    # LANGUAGE). niri/noctalia inherit this env, so nothing WM-specific is
+    # needed. anything that isn't Portuguese falls back to English.
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"):
+        v = os.environ.get(var, "")
+        if v:
+            code = v.split(":")[0].split(".")[0].split("_")[0].lower()
+            if code:
+                return "pt" if code == "pt" else "en"
+    return "en"
+
+
+STRINGS = {
+    "en": {
+        "ready": "Ready to record",
+        "recording": "Recording",
+        "capture": "CAPTURE",
+        "region": "region (else full screen)",
+        "audio": "desktop audio",
+        "mic": "microphone",
+        "start": "Start recording",
+        "stop": "Stop recording",
+        "space": "space",
+        "folder": "folder",
+        "quit": "quit",
+        "delete": "delete",
+        "confirm": "Delete {name}?",
+        "yes": "yes",
+        "no": "no",
+        "not_found": "grava-tela not found on PATH",
+        "stopping": "stopping recording…",
+        "starting": "starting: {target}…",
+        "tgt_region": "region (slurp)",
+        "tgt_monitor": "focused monitor",
+        "nothing": "nothing recording",
+        "opening": "opening folder…",
+        "no_fm": "no file manager found",
+        "stop_first": "stop the recording before deleting",
+        "no_video": "no video to delete",
+        "deleted": "deleted: {name}",
+        "del_fail": "delete failed",
+        "canceled": "canceled",
+        "folder_set": "folder: {dir}",
+        "no_picker": "no folder picker (install zenity or kdialog)",
+        "main_not_found": "grava-tela not found in ~/.local/bin or on PATH.",
+    },
+    "pt": {
+        "ready": "Pronto para gravar",
+        "recording": "Gravando",
+        "capture": "CAPTURAR",
+        "region": "região (senão, tela toda)",
+        "audio": "áudio do desktop",
+        "mic": "microfone",
+        "start": "Iniciar gravação",
+        "stop": "Parar gravação",
+        "space": "espaço",
+        "folder": "pasta",
+        "quit": "sair",
+        "delete": "apagar",
+        "confirm": "Apagar {name}?",
+        "yes": "sim",
+        "no": "não",
+        "not_found": "grava-tela não encontrado no PATH",
+        "stopping": "parando gravação…",
+        "starting": "iniciando: {target}…",
+        "tgt_region": "região (slurp)",
+        "tgt_monitor": "monitor focado",
+        "nothing": "nada gravando",
+        "opening": "abrindo pasta…",
+        "no_fm": "nenhum gerenciador de arquivos encontrado",
+        "stop_first": "pare a gravação antes de apagar",
+        "no_video": "nenhum vídeo para apagar",
+        "deleted": "apagado: {name}",
+        "del_fail": "falha ao apagar",
+        "canceled": "cancelado",
+        "folder_set": "pasta: {dir}",
+        "no_picker": "sem seletor de pasta (instale zenity ou kdialog)",
+        "main_not_found": "grava-tela não encontrado em ~/.local/bin nem no PATH.",
+    },
+}
 
 
 def videos_dir():
@@ -103,6 +190,26 @@ def delete_video(path):
     return True
 
 
+def pick_folder(start):
+    # GUI directory chooser. returns: chosen path (str), None if canceled,
+    # or False if no picker is installed. blocks until the dialog closes.
+    if shutil.which("zenity"):
+        cmd = ["zenity", "--file-selection", "--directory",
+               "--title=grava-tela", "--filename", start.rstrip("/") + "/"]
+    elif shutil.which("kdialog"):
+        cmd = ["kdialog", "--getexistingdirectory", start]
+    else:
+        return False
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+    except OSError:
+        return None
+    if r.returncode != 0:
+        return None
+    d = r.stdout.strip()
+    return d if d and os.path.isdir(d) else None
+
+
 def is_recording():
     return subprocess.run(
         ["pgrep", "-f", "^gpu-screen-recorder"],
@@ -144,6 +251,8 @@ class UI:
         self.msg = ""
         self.msg_until = 0.0
         self.confirm_del = None   # path pending delete confirmation, or None
+        self.t = STRINGS[detect_lang()]
+        self.outdir = videos_dir()   # mutável pelo seletor de pasta
 
     def flash(self, text, secs=4):
         self.msg = text
@@ -157,11 +266,12 @@ class UI:
             f.append("--audio")
         if self.mic:
             f.append("--mic")
+        f.append("--outdir=" + self.outdir)
         return f
 
     def run_grava(self, extra=None):
         if not os.path.exists(GRAVA):
-            self.flash("grava-tela não encontrado no PATH")
+            self.flash(self.t["not_found"])
             return
         args = [GRAVA] + (extra if extra is not None else self.flags())
         subprocess.Popen(
@@ -173,11 +283,11 @@ class UI:
         # espelha o comportamento do próprio script (é um toggle)
         if rec:
             self.run_grava(["--stop"])
-            self.flash("parando gravação…")
+            self.flash(self.t["stopping"])
         else:
             self.run_grava()
-            alvo = "região (slurp)" if self.region else "monitor focado"
-            self.flash(f"iniciando: {alvo}…")
+            target = self.t["tgt_region"] if self.region else self.t["tgt_monitor"]
+            self.flash(self.t["starting"].format(target=target))
 
 
 def draw(stdscr, ui):
@@ -207,7 +317,7 @@ def draw(stdscr, ui):
     except (AttributeError, curses.error):
         pass
 
-    outdir = videos_dir()
+    t = ui.t
 
     def put(y, x, s, attr=0):
         # addstr tolerante: nunca estoura a borda da janela
@@ -220,7 +330,7 @@ def draw(stdscr, ui):
 
     while True:
         rec = is_recording()
-        lastvid = last_video(outdir)
+        lastvid = last_video(ui.outdir)
         stdscr.erase()
         h, w = stdscr.getmaxyx()
 
@@ -247,11 +357,11 @@ def draw(stdscr, ui):
             start = rec_start_epoch()
             el = fmt_elapsed(time.time() - start) if start else "--:--"
             put(sy, ix, "●", C_REC)
-            put(sy, ix + 2, "Gravando", C_REC)
+            put(sy, ix + 2, t["recording"], C_REC)
             put(sy, bx + bw - 3 - len(el), el, C_ON)
         else:
             put(sy, ix, "○", C_DIM)
-            put(sy, ix + 2, "Pronto para gravar", C_DIM)
+            put(sy, ix + 2, t["ready"], C_DIM)
 
         # ── seção capturar ──
         def toggle_row(y, key, on, label, action, locked=False):
@@ -263,18 +373,18 @@ def draw(stdscr, ui):
             if not locked:
                 zones[y] = (ix, ix + 7 + len(label), action)
 
-        put(by + 4, ix, "CAPTURAR", C_TITLE)
-        toggle_row(by + 5, "r", ui.region, "região (senão, tela toda)", "region", rec)
-        toggle_row(by + 6, "a", ui.audio, "áudio do desktop", "audio", rec)
-        toggle_row(by + 7, "m", ui.mic, "microfone", "mic", rec)
+        put(by + 4, ix, t["capture"], C_TITLE)
+        toggle_row(by + 5, "r", ui.region, t["region"], "region", rec)
+        toggle_row(by + 6, "a", ui.audio, t["audio"], "audio", rec)
+        toggle_row(by + 7, "m", ui.mic, t["mic"], "mic", rec)
 
         # ── botão principal ──
         btn_y = by + 9
         if rec:
-            txt, battr = "Parar gravação", curses.color_pair(2) | curses.A_REVERSE | curses.A_BOLD
+            txt, battr = t["stop"], curses.color_pair(2) | curses.A_REVERSE | curses.A_BOLD
         else:
-            txt, battr = "Iniciar gravação", curses.color_pair(1) | curses.A_REVERSE | curses.A_BOLD
-        hint = "espaço"
+            txt, battr = t["start"], curses.color_pair(1) | curses.A_REVERSE | curses.A_BOLD
+        hint = t["space"]
         barw = bw - 3  # cabe exatamente entre as bordas (bx+2 .. bx+bw-2)
         pad = max(1, barw - 2 - len(txt) - len(hint))
         bar = (" " + txt + " " * pad + hint + " ")[:barw].ljust(barw)
@@ -282,31 +392,37 @@ def draw(stdscr, ui):
         zones[btn_y] = (bx + 2, bx + bw - 2, "toggle")
 
         # ── rodapé ──
+        # caminho da pasta: clicável → abre um seletor de diretório
         fy = by + 11
-        put(fy, ix, outdir.replace(os.path.expanduser("~"), "~")[:inner], C_DIM)
+        shown = ui.outdir.replace(os.path.expanduser("~"), "~")[:inner]
+        put(fy, ix, shown, C_DIM | curses.A_UNDERLINE)
 
         gy = by + 13
         put(gy, ix, " o ", curses.A_REVERSE)
-        put(gy, ix + 4, "pasta", C_DIM)
+        put(gy, ix + 4, t["folder"], C_DIM)
         put(gy, ix + 12, " q ", curses.A_REVERSE)
-        put(gy, ix + 16, "sair", C_DIM)
-        extra_zones = [(gy, ix, ix + 9, "open"), (gy, ix + 12, ix + 20, "quit")]
+        put(gy, ix + 16, t["quit"], C_DIM)
+        extra_zones = [
+            (fy, ix, ix + len(shown), "pick"),
+            (gy, ix, ix + 9, "open"),
+            (gy, ix + 12, ix + 20, "quit"),
+        ]
 
         # botão apagar: só fora de gravação e quando existe pelo menos um vídeo.
         # escondido durante a confirmação (é o próprio alvo).
         if not rec and lastvid and not ui.confirm_del:
             put(gy, ix + 22, " x ", curses.A_REVERSE)
-            put(gy, ix + 26, "apagar", C_DIM)
+            put(gy, ix + 26, t["delete"], C_DIM)
             extra_zones.append((gy, ix + 22, ix + 32, "del_ask"))
 
         # ── confirmação de apagar / mensagem efêmera ──
         if ui.confirm_del:
             name = os.path.basename(ui.confirm_del)
-            put(by + 14, ix, ("Apagar " + name + "?")[:inner], C_REC)
-            put(by + 15, ix, " s ", curses.A_REVERSE)
-            put(by + 15, ix + 4, "sim", C_ON)
-            put(by + 15, ix + 10, " n ", curses.A_REVERSE)
-            put(by + 15, ix + 14, "não", C_DIM)
+            put(by + 14, ix, t["confirm"].format(name=name)[:inner], C_REC)
+            put(by + 15, ix, f" {t['yes'][0]} ", curses.A_REVERSE)
+            put(by + 15, ix + 4, t["yes"], C_ON)
+            put(by + 15, ix + 10, f" {t['no'][0]} ", curses.A_REVERSE)
+            put(by + 15, ix + 14, t["no"], C_DIM)
             extra_zones.append((by + 15, ix, ix + 8, "del_yes"))
             extra_zones.append((by + 15, ix + 10, ix + 18, "del_no"))
         elif ui.msg and time.time() < ui.msg_until:
@@ -381,36 +497,44 @@ def draw(stdscr, ui):
         elif action == "stop":
             if rec:
                 ui.run_grava(["--stop"])
-                ui.flash("parando gravação…")
+                ui.flash(t["stopping"])
             else:
-                ui.flash("nada gravando")
+                ui.flash(t["nothing"])
         elif action == "open":
-            if open_folder(outdir):
-                ui.flash("abrindo pasta…")
+            if open_folder(ui.outdir):
+                ui.flash(t["opening"])
             else:
-                ui.flash("nenhum gerenciador de arquivos encontrado")
+                ui.flash(t["no_fm"])
+        elif action == "pick":
+            res = pick_folder(ui.outdir)
+            if res is False:
+                ui.flash(t["no_picker"])
+            elif res:
+                ui.outdir = res
+                ui.flash(t["folder_set"].format(
+                    dir=res.replace(os.path.expanduser("~"), "~")))
         elif action == "del_ask":
             if rec:
-                ui.flash("pare a gravação antes de apagar")
+                ui.flash(t["stop_first"])
             elif lastvid:
                 ui.confirm_del = lastvid
             else:
-                ui.flash("nenhum vídeo para apagar")
+                ui.flash(t["no_video"])
         elif action == "del_yes":
             target = ui.confirm_del
             ui.confirm_del = None
             if target and delete_video(target):
-                ui.flash(f"apagado: {os.path.basename(target)}")
+                ui.flash(t["deleted"].format(name=os.path.basename(target)))
             else:
-                ui.flash("falha ao apagar")
+                ui.flash(t["del_fail"])
         elif action == "del_no":
             ui.confirm_del = None
-            ui.flash("cancelado")
+            ui.flash(t["canceled"])
 
 
 def main():
     if not os.path.exists(GRAVA):
-        print("grava-tela não encontrado em ~/.local/bin nem no PATH.")
+        print(STRINGS[detect_lang()]["main_not_found"])
         return 1
     curses.wrapper(draw, UI())
     return 0

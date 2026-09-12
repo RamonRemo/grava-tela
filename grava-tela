@@ -6,6 +6,7 @@
 #   grava-tela --audio             # inclui áudio do desktop (default_output)
 #   grava-tela --mic               # inclui microfone (default_input)
 #   grava-tela --stop              # apenas para (não inicia)
+#   grava-tela --outdir=/caminho   # sobrescreve a pasta de saída
 # Combine à vontade: grava-tela --region --audio --mic
 
 set -euo pipefail
@@ -16,15 +17,20 @@ PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/grava-tela.pid"
 NAMEFILE="${XDG_RUNTIME_DIR:-/tmp}/grava-tela.filename"
 
 REGION=false AUDIO=false MIC=false STOP=false
+OUT_OVERRIDE=""
 for a in "$@"; do
   case "$a" in
-    --region) REGION=true ;;
-    --audio)  AUDIO=true ;;
-    --mic)    MIC=true ;;
-    --stop)   STOP=true ;;
+    --region)   REGION=true ;;
+    --audio)    AUDIO=true ;;
+    --mic)      MIC=true ;;
+    --stop)     STOP=true ;;
+    --outdir=*) OUT_OVERRIDE="${a#*=}" ;;
     *) echo "opção desconhecida: $a" >&2; exit 2 ;;
   esac
 done
+
+# --outdir tem precedência sobre XDG_VIDEOS_DIR / default
+[[ -n "$OUT_OVERRIDE" ]] && OUT_DIR="$OUT_OVERRIDE"
 
 is_running() { pgrep -f '^gpu-screen-recorder' >/dev/null; }
 
