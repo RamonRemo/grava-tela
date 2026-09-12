@@ -2,11 +2,11 @@
 
 # 🎬 gravatui
 
-**Grave a tela no Wayland sem tirar a mão do teclado.**
+**Record your screen on Wayland without lifting your hands off the keyboard.**
 
-Uma interface de terminal (curses, e clicável) por cima do `grava-tela` — um
-toggle enxuto sobre o [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/).
-Aperta, grava. Aperta de novo, salva.
+A terminal interface (curses, and clickable) on top of `grava-tela` — a lean
+toggle over [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/).
+Press it, recording starts. Press it again, it saves.
 
 </div>
 
@@ -28,46 +28,48 @@ Aperta, grava. Aperta de novo, salva.
 ╰──────────────────────────────────────────╯
 ```
 
+> The TUI ships in Portuguese; the box above mirrors its real output.
+
 ---
 
-## ✨ Recursos
+## ✨ Features
 
-- **Toggle de um toque** — inicia e para na mesma tecla; salva o `.mp4` e manda
-  uma notificação com preview do frame.
-- **TUI limpa e clicável** — tudo funciona por teclado *ou* mouse.
-- **Estado real** — a interface lê se o `gpu-screen-recorder` está de fato
-  rodando, não um estado inventado.
-- **Alvos flexíveis** — monitor focado ou uma região selecionada com o mouse.
-- **Áudio opcional** — desktop, microfone, os dois, ou nada.
-- **Zero dependência de pip** — Python puro (só a stdlib).
+- **One-key toggle** — starts and stops on the same key; saves the `.mp4` and
+  fires a notification with a frame preview.
+- **Clean, clickable TUI** — everything works by keyboard *or* mouse.
+- **Real state** — the interface reads whether `gpu-screen-recorder` is actually
+  running, not some made-up state.
+- **Flexible targets** — the focused monitor or a mouse-selected region.
+- **Optional audio** — desktop, microphone, both, or none.
+- **Zero pip dependencies** — pure Python (stdlib only).
 
-## 🧩 Anatomia
+## 🧩 Anatomy
 
-| Peça | O que é |
+| Part | What it is |
 |------|---------|
-| **`grava-tela`** | O motor. Script bash, toggle. Grava em `$XDG_VIDEOS_DIR` (ou `~/Vídeos`), notifica com preview. **Funciona sozinho**, sem a TUI. |
-| **`gravatui.py`** (`grava-tui`) | A interface. Só monta as flags e chama o `grava-tela`; observa o `gpu-screen-recorder` pra saber o estado. |
+| **`grava-tela`** | The engine. Bash script, toggle. Records into `$XDG_VIDEOS_DIR` (or `~/Vídeos`), notifies with a preview. **Works on its own**, without the TUI. |
+| **`gravatui.py`** (`grava-tui`) | The interface. Only assembles the flags and calls `grava-tela`; watches `gpu-screen-recorder` to know the state. |
 
-## 📦 Dependências
+## 📦 Dependencies
 
-**Obrigatórias**
+**Required**
 
-| Pacote | Pra quê |
+| Package | What for |
 |--------|---------|
-| `gpu-screen-recorder` | O encoder. AMD / NVIDIA / Intel. Sem ele, nada grava. |
-| `ffmpeg` | Gera o preview da notificação. |
-| `python3` | Só a stdlib (`curses`). Nada de `pip`. |
+| `gpu-screen-recorder` | The encoder. AMD / NVIDIA / Intel. Without it, nothing records. |
+| `ffmpeg` | Generates the notification preview. |
+| `python3` | Stdlib only (`curses`). No `pip`. |
 
-**Opcionais**
+**Optional**
 
-| Pacote | Sem ele… |
+| Package | Without it… |
 |--------|----------|
-| `slurp` | o modo *região* não funciona (o resto sim). |
-| `libnotify` (`notify-send`) | sem notificação de início/fim. |
-| `niri` + `jq` | a detecção do **monitor focado** cai no primeiro monitor. |
-| `kitty` | usado pelo lançador `.desktop` e pelo atalho de teclado. |
+| `slurp` | *region* mode does not work (the rest does). |
+| `libnotify` (`notify-send`) | no start/stop notification. |
+| `niri` + `jq` | **focused-monitor** detection falls back to the first monitor. |
+| `kitty` | used by the `.desktop` launcher and the keybinding. |
 
-### Instalando as dependências
+### Installing the dependencies
 
 ```sh
 # Arch / CachyOS
@@ -80,68 +82,68 @@ sudo dnf install ffmpeg slurp libnotify jq
 sudo apt install ffmpeg slurp libnotify-bin jq
 ```
 
-### E o gpu-screen-recorder?
+### What about gpu-screen-recorder?
 
-Ele **não está** nos repositórios oficiais da maioria das distros. Escolha um:
+It is **not** in the official repositories of most distros. Pick one:
 
 ```sh
 # Arch / CachyOS (AUR)
 paru -S gpu-screen-recorder
 
-# Qualquer distro — Flatpak (mais portável)
+# Any distro — Flatpak (most portable)
 flatpak install flathub com.dec05eba.gpu_screen_recorder
 ```
 
-> ⚠️ Pela **Flatpak** o binário é `flatpak run com.dec05eba.gpu_screen_recorder`,
-> não `gpu-screen-recorder` no PATH. Nesse caso, exponha um wrapper:
+> ⚠️ Via **Flatpak** the binary is `flatpak run com.dec05eba.gpu_screen_recorder`,
+> not `gpu-screen-recorder` on the PATH. In that case, expose a wrapper:
 > ```sh
 > printf '#!/bin/sh\nexec flatpak run com.dec05eba.gpu_screen_recorder "$@"\n' \
 >   > ~/.local/bin/gpu-screen-recorder && chmod +x ~/.local/bin/gpu-screen-recorder
 > ```
 
-Build a partir do fonte e docs: <https://git.dec05eba.com/gpu-screen-recorder/>.
+Build from source and docs: <https://git.dec05eba.com/gpu-screen-recorder/>.
 
-## 🚀 Instalação
+## 🚀 Installation
 
 ```sh
 git clone <url> gravatui && cd gravatui
 ./install.sh
 ```
 
-O `install.sh` é **idempotente** e faz:
+`install.sh` is **idempotent** and:
 
-- linka `grava-tela` e `grava-tui` em `~/.local/bin`;
-- instala o lançador em `~/.local/share/applications` (aparece no menu de apps);
-- confere as dependências e diz o que falta.
+- links `grava-tela` and `grava-tui` into `~/.local/bin`;
+- installs the launcher into `~/.local/share/applications` (shows up in the app menu);
+- checks the dependencies and reports what is missing.
 
-Prefere não instalar? Roda direto do clone — `./gravatui.py` acha o `grava-tela`
-ao lado dele.
+Prefer not to install? Run it straight from the clone — `./gravatui.py` finds
+`grava-tela` next to it.
 
-## ⌨️ Uso
+## ⌨️ Usage
 
 ```sh
-grava-tui                              # abre a TUI
+grava-tui                              # opens the TUI
 
-grava-tela                             # grava o monitor focado (toggle)
-grava-tela --region --audio --mic      # região + desktop + microfone
-grava-tela --stop                      # para
+grava-tela                             # records the focused monitor (toggle)
+grava-tela --region --audio --mic      # region + desktop + microphone
+grava-tela --stop                      # stop
 ```
 
-Na TUI:
+In the TUI:
 
-| Tecla | Ação |
+| Key | Action |
 |-------|------|
-| `r` / `a` / `m` | alterna região / áudio / microfone |
-| `espaço` | inicia ou para |
-| `o` | abre a pasta de gravações |
-| `q` | sai (não interrompe a gravação) |
+| `r` / `a` / `m` | toggle region / audio / microphone |
+| `space` | start or stop |
+| `o` | open the recordings folder |
+| `q` | quit (does not interrupt an ongoing recording) |
 
-Tudo isso também é **clicável**.
+All of this is also **clickable**.
 
-## 🎯 Atalho de teclado (niri)
+## 🎯 Keybinding (niri)
 
-Atalho global não dá pra instalar de forma portável — cada compositor tem o seu.
-No **niri**, em `~/.config/niri/config.kdl` (ou num arquivo incluído):
+A global shortcut can't be installed portably — every compositor has its own.
+On **niri**, in `~/.config/niri/config.kdl` (or an included file):
 
 ```kdl
 binds {
@@ -160,20 +162,20 @@ window-rule {
 }
 ```
 
-> 💡 O `remember_window_size=no` é o pulo do gato: é ele que faz o kitty
-> respeitar o tamanho em células. Sem ele, a janela reabre no tamanho lembrado
-> e ignora o `initial_window_width`.
+> 💡 `remember_window_size=no` is the trick: it's what makes kitty respect the
+> size in cells. Without it, the window reopens at the remembered size and
+> ignores `initial_window_width`.
 
-Outros compositores: aponte o atalho pro mesmo comando `kitty … -e grava-tui`.
+Other compositors: point the shortcut at the same `kitty … -e grava-tui` command.
 
-## ⚖️ Limitações honestas
+## ⚖️ Honest limitations
 
-- **Monitor focado** usa `niri msg`. Em outro compositor, o modo monitor cai no
-  primeiro output; o modo **região** (slurp) funciona em qualquer Wayland.
-- É **Wayland**. Em X11 o slurp não roda e o alvo de captura muda.
-- Testado com GPU **AMD**. O gpu-screen-recorder suporta NVIDIA/Intel, mas os
-  parâmetros aqui não foram exercitados nessas.
+- **Focused monitor** uses `niri msg`. On another compositor, monitor mode falls
+  back to the first output; **region** mode (slurp) works on any Wayland.
+- It's **Wayland**. On X11 slurp does not run and the capture target changes.
+- Tested with an **AMD** GPU. gpu-screen-recorder supports NVIDIA/Intel, but the
+  parameters here were not exercised on those.
 
-## 📄 Licença
+## 📄 License
 
 [MIT](LICENSE).
